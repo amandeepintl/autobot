@@ -1,3 +1,14 @@
+---
+title: Autobot
+emoji: 💻
+colorFrom: green
+colorTo: indigo
+sdk: docker
+pinned: false
+license: mit
+short_description: Production-grade, highly resilient, stationary AFK Mineflaye
+---
+
 # Autobot
 
 A production-grade, highly resilient, stationary AFK Mineflayer service designed for 24/7 uptime on Minecraft servers (specifically optimized for Aternos). 
