@@ -8,40 +8,56 @@ Autobot uses a decoupled, multi-phase parent-child architecture designed for ult
 
 ```mermaid
 graph TD
-    subgraph Parent Process
-        S[Supervisor - src/supervisor.js]
-    end
-    subgraph Child Process
-        I[Index - src/index.js]
-        EB[Event Bus - src/eventBus.js]
-        TS[Task Scheduler - src/taskScheduler.js]
-        C[Connection Manager - src/connection.js]
-        CB[Circuit Breaker - src/circuitBreaker.js]
-        W[Watchdog - src/watchdog.js]
-        H[Health Monitor - src/healthMonitor.js]
-        NM[Network Monitor - src/networkMonitor.js]
-        SD[Server Detection - src/serverDetection.js]
-        CL[Cleanup - src/cleanup.js]
-        B[Behavior Manager - src/behavior.js]
-        AFK[Anti-AFK - src/antiAfk.js]
-        MM[Micro-Movement - src/microMovement.js]
-        UN[Unstuck - src/unstuck.js]
-        SM[Sleep Manager - src/sleepManager.js]
-        WM[World Memory - src/worldMemory.js]
-        UR[Username Rotation - src/usernameRotation.js]
-        L[Logger - src/logger.js]
-        DEP[Deployment - src/deployment.js]
-        DI[Diagnostics - src/diagnostics.js]
-        SMG[Storage Manager - src/storageManager.js]
-        BM[Backup Manager - src/backupManager.js]
-        M[Metrics - src/metrics.js]
-        ST[Status Reporter - src/statusReporter.js]
+    subgraph Parent [Parent Process]
+        S[Supervisor - supervisor.js]
     end
 
-    S -->|spawns/monitors| I
-    I -->|heartbeats every 60s| S
-    I --> EB
-    I --> TS
+    subgraph Child [Child Process - index.js]
+        subgraph Core [Core Engine]
+            EB[Event Bus - eventBus.js]
+            TS[Task Scheduler - taskScheduler.js]
+        end
+
+        subgraph Conn [Connection & Uptime]
+            C[Connection Mgr - connection.js]
+            CB[Circuit Breaker - circuitBreaker.js]
+            UR[User Rotation - usernameRotation.js]
+            W[Watchdog - watchdog.js]
+        end
+
+        subgraph Locomotion [Behaviors & Movement]
+            B[Behavior Mgr - behavior.js]
+            AFK[Anti-AFK - antiAfk.js]
+            SM[Sleep Mgr - sleepManager.js]
+            MM[Micro-Move - microMovement.js]
+            UN[Unstuck Mgr - unstuck.js]
+        end
+
+        subgraph Mon [Health & Diagnostics]
+            H[Health Monitor - healthMonitor.js]
+            NM[Network Monitor - networkMonitor.js]
+            ST[Status Reporter - statusReporter.js]
+            DI[Diagnostics - diagnostics.js]
+        end
+
+        subgraph Store [Data & System Storage]
+            CFG[Config - config.js]
+            DEP[Deployment - deployment.js]
+            SMG[Storage Mgr - storageManager.js]
+            BM[Backup Mgr - backupManager.js]
+            WM[World Memory - worldMemory.js]
+            M[Metrics - metrics.js]
+            L[Logger - logger.js]
+            CL[Cleanup - cleanup.js]
+        end
+    end
+
+    S -->|spawns/monitors| Child
+    Child --> Core
+    Core --> Conn
+    Core --> Locomotion
+    Core --> Mon
+    Core --> Store
 ```
 
 ## Features
