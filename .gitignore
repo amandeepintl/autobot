@@ -1,0 +1,15 @@
+# Node modules
+node_modules/
+
+# Local environment variables
+.env
+
+# Dynamic run-time files and directories
+logs/
+data/
+backups/
+archive/
+
+# OS specific files
+.DS_Store
+Thumbs.db

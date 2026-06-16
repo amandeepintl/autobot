@@ -1,0 +1,17 @@
+{
+  "name": "autobot",
+  "version": "1.0.0",
+  "description": "Production-grade self-healing stationary Mineflayer bot with supervisor, circuit breakers, and micro-movements.",
+  "main": "src/supervisor.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/supervisor.js",
+    "bot": "node src/index.js",
+    "test": "node --check src/**/*.js"
+  },
+  "dependencies": {
+    "mineflayer": "^4.21.0",
+    "minecraft-data": "^3.69.0",
+    "vec3": "^0.1.8"
+  }
+}
