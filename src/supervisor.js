@@ -1,6 +1,7 @@
 import { fork } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import http from 'http';
 
 const SUPERVISOR_LOG = path.resolve("logs/supervisor.log");
 
@@ -33,6 +34,7 @@ class Supervisor {
     this.spawnChild();
     this.startHeartbeatCheck();
     this.setupProcessSignals();
+    this.startHttpServer();
   }
 
   spawnChild() {
@@ -152,6 +154,33 @@ class Supervisor {
 
     process.on('SIGINT', () => handleSignal('SIGINT'));
     process.on('SIGTERM', () => handleSignal('SIGTERM'));
+  }
+
+  startHttpServer() {
+    const port = process.env.PORT || 7860;
+    try {
+      const server = http.createServer((req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        
+        const now = Date.now();
+        const heartbeatElapsed = now - this.lastHeartbeat;
+        const childStatus = (this.child && heartbeatElapsed < 120000) ? "online" : "offline";
+
+        res.end(JSON.stringify({
+          status: "healthy",
+          botStatus: childStatus,
+          lastHeartbeatSecondsAgo: Math.round(heartbeatElapsed / 1000),
+          supervisorUptimeSeconds: Math.round(process.uptime()),
+          emergencySafeMode: this.restartTimestamps.length >= 5
+        }));
+      });
+
+      server.listen(port, () => {
+        log(`Health check HTTP server listening on port ${port}`);
+      });
+    } catch (err) {
+      log(`Failed to start health HTTP server: ${err.message}`);
+    }
   }
 }
 
