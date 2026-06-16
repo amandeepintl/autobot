@@ -39,7 +39,7 @@ graph TD
     end
 
     S -->|spawns/monitors| I
-    I -->|heartbeats (every 60s)| S
+    I -->|heartbeats every 60s| S
     I --> EB
     I --> TS
 ```
