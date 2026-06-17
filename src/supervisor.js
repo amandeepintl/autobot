@@ -121,13 +121,13 @@ class Supervisor {
     const port = process.env.PORT || 7860;
     try {
       const server = http.createServer((req, res) => {
-        const reqUrl = req.url || '';
-        if (reqUrl.startsWith('/logs')) {
+        const parsedPath = (req.url || '').split('?')[0];
+        if (parsedPath.startsWith('/logs')) {
           res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-          if (reqUrl === '/logs/latest') {
+          if (parsedPath === '/logs/latest') {
             const file = path.resolve("logs/latest.log");
             res.end(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : "No latest log file found.");
-          } else if (reqUrl === '/logs/diagnostics') {
+          } else if (parsedPath === '/logs/diagnostics') {
             const file = path.resolve("logs/diagnostics.log");
             res.end(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : "No diagnostics log file found.");
           } else {
