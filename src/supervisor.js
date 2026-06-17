@@ -1,4 +1,6 @@
-import { fork } from 'child_process';
+import { db } from './core/database.js';
+import { workerPool } from './worker/workerPool.js';
+import { eventBus } from './core/eventBus.js';
 import path from 'path';
 import fs from 'fs';
 import http from 'http';
@@ -10,7 +12,6 @@ function log(message) {
   const entry = `[${timestamp}] [SUPERVISOR] ${message}`;
   console.log(`\x1b[35m[SUPERVISOR]\x1b[0m ${message}`);
   try {
-    // Ensure logs folder exists
     const dir = path.dirname(SUPERVISOR_LOG);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(SUPERVISOR_LOG, entry + "\n", "utf8");
@@ -21,139 +22,99 @@ function log(message) {
 
 class Supervisor {
   constructor() {
-    this.childPath = path.resolve("src/index.js");
-    this.child = null;
-    this.lastHeartbeat = Date.now();
-    this.heartbeatInterval = null;
-    this.restartTimestamps = [];
+    this.lastHeartbeats = new Map(); // workerName -> timestamp
+    this.workerMetrics = new Map();  // workerName -> telemetry report
     this.isShuttingDown = false;
   }
 
-  start() {
-    log("Initializing supervisor system...");
-    this.spawnChild();
-    this.startHeartbeatCheck();
+  async start() {
+    log("Initializing Minecraft Worker Platform (MWP) Supervisor...");
+
+    // 1. Initialize SQLite WAL Database
+    try {
+      await db.open();
+      await db.configure();
+      await db.initializeSchema();
+    } catch (err) {
+      log(`CRITICAL: Database initialization failed: ${err.message}`);
+      process.exit(1);
+    }
+
+    // 2. Setup Event Bus Listeners
+    this.setupEventBus();
+
+    // 3. Spawn initial permanent workers
+    this.spawnInitialWorkers();
+
+    // 4. Setup signal handlers and HTTP telemetry server
     this.setupProcessSignals();
     this.startHttpServer();
   }
 
-  spawnChild() {
-    if (this.child) {
-      log("Child process already exists, clean termination before respawn...");
-      try { this.child.kill('SIGKILL'); } catch (_) {}
-      this.child = null;
-    }
-
-    // Clean old timestamps and assess loop frequency
-    const now = Date.now();
-    this.restartTimestamps = this.restartTimestamps.filter(t => now - t < 300000); // 5 minutes window
-
-    let safeMode = false;
-    if (this.restartTimestamps.length >= 5) {
-      log("WARNING: 5 crashes detected within 5 minutes. Spawning child in EMERGENCY SAFE MODE.");
-      safeMode = true;
-    }
-
-    this.restartTimestamps.push(now);
-
-    const env = {
-      ...process.env,
-      EMERGENCY_SAFE_MODE: safeMode ? "true" : "false"
-    };
-
-    log(`Spawning child process index.js (Attempt count in 5m: ${this.restartTimestamps.length})...`);
-    
-    this.child = fork(this.childPath, [], {
-      env,
-      execArgv: ['--max-old-space-size=256', '--expose-gc'],
-      stdio: ['inherit', 'inherit', 'inherit', 'ipc']
+  setupEventBus() {
+    // Listen to heartbeats from active workers
+    eventBus.on('worker_heartbeat', ({ type, timestamp }) => {
+      this.lastHeartbeats.set(type, timestamp);
     });
 
-    this.lastHeartbeat = Date.now(); // reset timer on spawn
+    // Listen to worker telemetry updates
+    eventBus.on('worker_telemetry', ({ type, data }) => {
+      this.workerMetrics.set(type, data);
+    });
 
-    this.child.on('message', (message) => {
-      if (message && message.type === 'heartbeat') {
-        this.lastHeartbeat = Date.now();
+    // Handle dynamically triggered worker spawning
+    eventBus.on('worker_message', ({ type, data }) => {
+      if (data.type === 'start_worker' && data.target) {
+        log(`Trigger request received: Spawning worker '${data.target}'`);
+        workerPool.spawnWorker(data.target);
+      } else if (data.type === 'stop_worker' && data.target) {
+        log(`Trigger request received: Stopping worker '${data.target}'`);
+        workerPool.terminateWorker(data.target);
       }
     });
 
-    this.child.on('exit', (code, signal) => {
-      if (this.isShuttingDown) {
-        log("Child exited during supervisor shutdown. Ending supervisor.");
-        return;
-      }
+    // Handle unexpected exits
+    eventBus.on('worker_exited', ({ type, code, signal }) => {
+      if (this.isShuttingDown) return;
 
-      log(`Child process exited. Code: ${code}, Signal: ${signal}`);
+      log(`Worker '${type}' exited. Code: ${code}, Signal: ${signal}`);
       
-      // If child exited with code 0 (clean shutdown request), we do not auto-restart.
-      if (code === 0) {
-        log("Child requested clean shutdown. Supervisor exiting...");
-        process.exit(0);
+      // Auto-restart permanent workers (like 'afk')
+      if (type === 'afk') {
+        log("Auto-restarting primary AFK worker in 5 seconds...");
+        setTimeout(() => {
+          if (!this.isShuttingDown) {
+            workerPool.spawnWorker('afk');
+          }
+        }, 5000);
       }
-
-      // Re-spawn child after a small delay to prevent tight spin loops
-      const delay = this.restartTimestamps.length > 5 ? 10000 : 2000;
-      log(`Auto-restarting child process in ${delay / 1000} seconds...`);
-      setTimeout(() => this.spawnChild(), delay);
-    });
-
-    this.child.on('error', (err) => {
-      log(`Child process error: ${err.message}`);
     });
   }
 
-  startHeartbeatCheck() {
-    this.heartbeatInterval = setInterval(() => {
-      if (!this.child || this.isShuttingDown) return;
-
-      const elapsed = Date.now() - this.lastHeartbeat;
-      if (elapsed > 120000) { // 120s timeout
-        log(`CRITICAL: Child process failed to send heartbeat for ${Math.round(elapsed / 1000)} seconds (Limit 120s). Killing frozen process...`);
-        try {
-          this.child.kill('SIGKILL');
-        } catch (err) {
-          log(`Failed to kill unresponsive child: ${err.message}`);
-        }
-        // Spawning will happen automatically via 'exit' event handler
-      }
-    }, 10000); // Check every 10 seconds
+  spawnInitialWorkers() {
+    log("Starting primary worker: 'afk'...");
+    workerPool.spawnWorker('afk');
   }
 
   setupProcessSignals() {
-    const handleSignal = (signal) => {
+    const handleShutdown = (signal) => {
       if (this.isShuttingDown) return;
       this.isShuttingDown = true;
-      log(`Received ${signal}. Gracefully stopping supervisor and child process...`);
+      log(`Received ${signal}. Gracefully stopping all workers and shutting down database...`);
 
-      if (this.heartbeatInterval) {
-        clearInterval(this.heartbeatInterval);
-      }
+      workerPool.shutdownAll();
 
-      if (this.child) {
-        // Send signal to child to shut down gracefully
-        this.child.kill(signal);
-        
-        // Timeout to force kill if child hangs
-        const killTimeout = setTimeout(() => {
-          log("Child failed to exit within 5s. Terminating forcefully...");
-          if (this.child) {
-            try { this.child.kill('SIGKILL'); } catch (_) {}
-          }
-          process.exit(0);
-        }, 5000);
-
-        this.child.on('exit', () => {
-          clearTimeout(killTimeout);
-          log("Child exited successfully. Supervisor exiting.");
-          process.exit(0);
-        });
-      } else {
+      db.close().then(() => {
+        log("Database connections closed cleanly. Exiting supervisor.");
         process.exit(0);
-      }
+      }).catch((err) => {
+        log(`Error closing database: ${err.message}`);
+        process.exit(1);
+      });
     };
 
-    process.on('SIGINT', () => handleSignal('SIGINT'));
-    process.on('SIGTERM', () => handleSignal('SIGTERM'));
+    process.on('SIGINT', () => handleShutdown('SIGINT'));
+    process.on('SIGTERM', () => handleShutdown('SIGTERM'));
   }
 
   startHttpServer() {
@@ -163,23 +124,32 @@ class Supervisor {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         
         const now = Date.now();
-        const heartbeatElapsed = now - this.lastHeartbeat;
-        const childStatus = (this.child && heartbeatElapsed < 120000) ? "online" : "offline";
+        const activeWorkers = workerPool.listActiveWorkers();
+        const workerStatuses = {};
+
+        for (const worker of activeWorkers) {
+          const lastHb = this.lastHeartbeats.get(worker) || 0;
+          const metrics = this.workerMetrics.get(worker) || {};
+          workerStatuses[worker] = {
+            status: (now - lastHb < 120000) ? "healthy" : "lagging",
+            lastHeartbeatSecondsAgo: Math.round((now - lastHb) / 1000),
+            metrics
+          };
+        }
 
         res.end(JSON.stringify({
           status: "healthy",
-          botStatus: childStatus,
-          lastHeartbeatSecondsAgo: Math.round(heartbeatElapsed / 1000),
-          supervisorUptimeSeconds: Math.round(process.uptime()),
-          emergencySafeMode: this.restartTimestamps.length >= 5
+          uptimeSeconds: Math.round(process.uptime()),
+          activeWorkers,
+          workers: workerStatuses
         }));
       });
 
       server.listen(port, () => {
-        log(`Health check HTTP server listening on port ${port}`);
+        log(`Supervisor HTTP status server listening on port ${port}`);
       });
     } catch (err) {
-      log(`Failed to start health HTTP server: ${err.message}`);
+      log(`Failed to start HTTP server: ${err.message}`);
     }
   }
 }

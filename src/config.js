@@ -104,5 +104,15 @@ export const config = {
     offlineRetryIntervalMs: 120000, // Wait 2 minutes if offline
     startingRetryIntervalMs: 60000, // Wait 1 minute if starting
     sleepingRetryIntervalMs: 180000 // Wait 3 minutes if sleeping
+  },
+  farmer: {
+    enabled: true,
+    username: "FarmerAman",
+    triggerCommands: ["@farmer", "@farm", "@harvest"],
+    whitelist: ["Aman", "Amandeepintl"],
+    searchRadius: 32,
+    depositChestRadius: 32,
+    cooldownMs: 30000,
+    minSeedsToKeep: 32
   }
 };
