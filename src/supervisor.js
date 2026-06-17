@@ -131,7 +131,20 @@ class Supervisor {
             const file = path.resolve("logs/diagnostics.log");
             res.end(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : "No diagnostics log file found.");
           } else {
-            res.end(fs.existsSync(SUPERVISOR_LOG) ? fs.readFileSync(SUPERVISOR_LOG, 'utf8') : "No supervisor log file found.");
+            let response = "--- LOG FILES LIST ---\n";
+            try {
+              if (fs.existsSync("logs")) {
+                const files = fs.readdirSync("logs");
+                response += files.map(f => `- ${f}`).join("\n") + "\n\n";
+              } else {
+                response += "logs/ directory does not exist.\n\n";
+              }
+            } catch (err) {
+              response += `Error listing logs directory: ${err.message}\n\n`;
+            }
+            response += "--- SUPERVISOR LOGS ---\n";
+            response += fs.existsSync(SUPERVISOR_LOG) ? fs.readFileSync(SUPERVISOR_LOG, 'utf8') : "No supervisor log file found.";
+            res.end(response);
           }
           return;
         }
