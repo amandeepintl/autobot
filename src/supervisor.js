@@ -103,11 +103,8 @@ class Supervisor {
 
       if (this.isShuttingDown) return;
 
-      // Rotate username on exit
-      if (config.usernameRotation?.enabled) {
-        this.afkUsernameIndex++;
-        this.saveRotationIndex();
-      }
+      // Don't rotate username on crash/restart — rotation is handled
+      // inside connectionManager within the child process itself
 
       const delay = config.usernameRotation?.delayBetweenRotationMs || 10000;
       log(`Auto-restarting bot process in ${delay / 1000} seconds...`);
