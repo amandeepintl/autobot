@@ -1,0 +1,11 @@
+node_modules
+logs
+data
+backups
+archive
+.env
+.git
+.gitignore
+README.md
+Dockerfile
+ping_server.js
