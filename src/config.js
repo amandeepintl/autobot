@@ -109,7 +109,7 @@ export const config = {
     enabled: true,
     username: "FarmerAman",
     triggerCommands: ["@farmer", "@farm", "@harvest"],
-    whitelist: ["Aman", "Amandeepintl"],
+    whitelist: ["Aman", "Amandeepintl", "HavocIzumi"],
     searchRadius: 32,
     depositChestRadius: 32,
     cooldownMs: 30000,

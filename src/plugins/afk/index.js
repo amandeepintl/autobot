@@ -7,6 +7,7 @@ export default class AfkWorker extends BaseWorker {
     super(name, config);
     this.chatInterval = null;
     this.afkActionInterval = null;
+    this.noticeInterval = null;
     this.lastTriggerTime = 0;
   }
 
@@ -25,25 +26,26 @@ export default class AfkWorker extends BaseWorker {
     // Start background activity loops
     this.startAfkLoop();
     this.startChatLoop();
+    this.startNoticeLoop();
   }
 
   handleChat(username, message) {
     if (!this.config.farmer || !this.config.farmer.enabled) return;
 
     const msg = message.trim().toLowerCase();
-    const isTrigger = this.config.farmer.triggerCommands.some(cmd => msg.includes(cmd.toLowerCase()));
-    
-    if (!isTrigger) return;
 
-    // 1. Permission checks (Whitelist validation)
-    const isWhitelisted = this.config.farmer.whitelist.some(u => u.toLowerCase() === username.toLowerCase());
-    if (!isWhitelisted) {
-      logger.warn("AFK-PLUGIN", `Unauthorized trigger attempt from username: ${username}`);
-      this.bot.chat(`Sorry @${username}, you do not have permission to control the farmer.`);
+    // 1. Help command
+    if (msg.includes('@help')) {
+      logger.info("AFK-PLUGIN", `Help command triggered by player: ${username}`);
+      this.bot.chat("Commands: @farmer, @farm, @harvest (summons the farmer bot to farm & deposit food), @help (lists active bot commands).");
       return;
     }
 
-    // 2. Cooldown check
+    // 2. Farmer commands
+    const isTrigger = this.config.farmer.triggerCommands.some(cmd => msg.includes(cmd.toLowerCase()));
+    if (!isTrigger) return;
+
+    // Trigger cooldown (30s) to prevent spamming worker forks
     const now = Date.now();
     const cooldown = this.config.farmer.cooldownMs || 30000;
     if (now - this.lastTriggerTime < cooldown) {
@@ -134,9 +136,23 @@ export default class AfkWorker extends BaseWorker {
     }, min);
   }
 
+  startNoticeLoop() {
+    if (this.noticeInterval) clearInterval(this.noticeInterval);
+
+    this.noticeInterval = setInterval(() => {
+      if (!this.active || this.bot.isSleeping) return;
+      try {
+        this.bot.chat("Tip: If you want a bot to farm food for you, type @farmer, @farm, or @harvest in the chat!");
+      } catch (err) {
+        logger.error("AFK-PLUGIN", `Failed to send notice chat: ${err.message}`);
+      }
+    }, 420000); // 7 minutes
+  }
+
   async shutdown() {
     if (this.chatInterval) clearInterval(this.chatInterval);
     if (this.afkActionInterval) clearInterval(this.afkActionInterval);
+    if (this.noticeInterval) clearInterval(this.noticeInterval);
     await super.shutdown();
   }
 }
