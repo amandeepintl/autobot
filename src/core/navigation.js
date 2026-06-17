@@ -29,7 +29,13 @@ class NavigationService {
     // Configure safe traversal options
     movements.canDig = false; // Prevent bot from breaking world block layouts during navigation
     movements.allowSprinting = true;
-    movements.allowParkour = true;
+    movements.allowParkour = false; // Disable parkour to prevent jumping on/over blocks (protects crops/farmland)
+    
+    // Add blocks to avoid to prevent walking/jumping on chests, crafting tables, and farmland if possible
+    if (mcData.blocksByName.chest) movements.blocksToAvoid.add(mcData.blocksByName.chest.id);
+    if (mcData.blocksByName.crafting_table) movements.blocksToAvoid.add(mcData.blocksByName.crafting_table.id);
+    if (mcData.blocksByName.farmland) movements.blocksToAvoid.add(mcData.blocksByName.farmland.id);
+    
     return movements;
   }
 
@@ -85,14 +91,30 @@ class NavigationService {
         
         if (distanceMoved < 0.1) {
           stuckTicks++;
-          if (stuckTicks >= 5) { // Static position for 5 checks (~2.5s)
+          if (stuckTicks >= 5) {
             logger.warn("NAVIGATION", "Stuck detected! Initiating local unstuck action.");
             
-            // Unstuck action: Jump and toggle crouch
-            bot.setControlState('jump', true);
-            setTimeout(() => {
-              bot.setControlState('jump', false);
-            }, 500);
+            // Check if farmland block is nearby
+            let nearFarmland = false;
+            for (let dx = -1; dx <= 1; dx++) {
+              for (let dz = -1; dz <= 1; dz++) {
+                const b = bot.blockAt(bot.entity.position.offset(dx, -1, dz));
+                if (b && b.name === 'farmland') {
+                  nearFarmland = true;
+                  break;
+                }
+              }
+            }
+
+            if (!nearFarmland) {
+              bot.setControlState('jump', true);
+              setTimeout(() => {
+                bot.setControlState('jump', false);
+              }, 500);
+            } else {
+              logger.warn("NAVIGATION", "Stuck near farmland - avoiding jump to protect crops. Resetting goal.");
+              bot.pathfinder.setGoal(null);
+            }
 
             stuckTicks = 0;
           }

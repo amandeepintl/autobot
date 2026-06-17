@@ -168,15 +168,15 @@ export default class FarmerWorker extends BaseWorker {
         logger.info("FARMER-PLUGIN", `Harvesting fully grown ${cropName} at ${x}, ${y}, ${z}`);
         
         try {
-          // Navigate to crop
-          await navigationService.navigateTo(this.bot, x, y, z, { reach: 2, mcData: this.mcData });
+          // Navigate to crop (using 2.5 reach so the bot walks less and harvests faster)
+          await navigationService.navigateTo(this.bot, x, y, z, { reach: 2.5, mcData: this.mcData });
 
           // Break the crop block
           await this.bot.dig(block);
           telemetryFramework.recordTaskSuccess(this.name);
 
-          // Wait 1 second to collect dropped items
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Wait 100ms to allow block breaking physics to process
+          await new Promise(resolve => setTimeout(resolve, 100));
 
           // Replant seed on farmland block (farmland is directly beneath, at y - 1)
           const seedName = strategy.getSeedName();
@@ -195,6 +195,37 @@ export default class FarmerWorker extends BaseWorker {
           telemetryFramework.recordTaskFailure(this.name);
           await recoveryEngine.handleFailure(this, err, SEVERITY.RECOVERABLE);
         }
+      }
+    }
+
+    // Sweep and collect any items left on the ground after harvesting the field
+    await this.collectNearbyDroppedItems();
+  }
+
+  async collectNearbyDroppedItems() {
+    const radius = 6;
+    const botPos = this.bot.entity.position;
+    
+    // Find all items nearby
+    const itemEntities = Object.values(this.bot.entities).filter(e => {
+      const isItem = e.type === 'item' || e.name === 'item' || e.objectType === 'Item' || e.objectType === 'Dropped Item';
+      if (!isItem) return false;
+      return e.position.distanceTo(botPos) <= radius;
+    });
+
+    if (itemEntities.length === 0) {
+      logger.info("FARMER-PLUGIN", "No dropped items found nearby to collect.");
+      return;
+    }
+
+    logger.info("FARMER-PLUGIN", `Found ${itemEntities.length} dropped items on the ground. Commencing collection sweep...`);
+    for (const item of itemEntities) {
+      try {
+        // Navigate directly to the item with a fast timeout and tight reach
+        await navigationService.navigateTo(this.bot, item.position.x, item.position.y, item.position.z, { reach: 0.5, mcData: this.mcData, timeout: 4000 });
+        await new Promise(resolve => setTimeout(resolve, 200));
+      } catch (err) {
+        logger.debug("FARMER-PLUGIN", `Failed to collect dropped item: ${err.message}`);
       }
     }
   }
