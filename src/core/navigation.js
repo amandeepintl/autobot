@@ -29,7 +29,7 @@ class NavigationService {
     // Configure safe traversal options
     movements.canDig = false; // Prevent bot from breaking world block layouts during navigation
     movements.allowSprinting = true;
-    movements.allowParkour = false; // Disable parkour to prevent jumping on/over blocks (protects crops/farmland)
+    movements.allowParkour = true; // Enable parkour so the bot can climb 1-block boundaries/steps
     
     // Add blocks to avoid to prevent walking/jumping on chests, crafting tables, and farmland if possible
     if (mcData.blocksByName.chest) movements.blocksToAvoid.add(mcData.blocksByName.chest.id);
@@ -94,25 +94,17 @@ class NavigationService {
           if (stuckTicks >= 5) {
             logger.warn("NAVIGATION", "Stuck detected! Initiating local unstuck action.");
             
-            // Check if farmland block is nearby
-            let nearFarmland = false;
-            for (let dx = -1; dx <= 1; dx++) {
-              for (let dz = -1; dz <= 1; dz++) {
-                const b = bot.blockAt(bot.entity.position.offset(dx, -1, dz));
-                if (b && b.name === 'farmland') {
-                  nearFarmland = true;
-                  break;
-                }
-              }
-            }
+            // Check if farmland is directly under the bot's feet
+            const blockUnder = bot.blockAt(bot.entity.position.offset(0, -0.5, 0));
+            const isFarmlandUnder = blockUnder && blockUnder.name === 'farmland';
 
-            if (!nearFarmland) {
+            if (!isFarmlandUnder) {
               bot.setControlState('jump', true);
               setTimeout(() => {
                 bot.setControlState('jump', false);
               }, 500);
             } else {
-              logger.warn("NAVIGATION", "Stuck near farmland - avoiding jump to protect crops. Resetting goal.");
+              logger.warn("NAVIGATION", "Stuck directly on farmland - avoiding jump to protect crops. Resetting goal.");
               bot.pathfinder.setGoal(null);
             }
 
