@@ -45,15 +45,12 @@ export const config = {
     stuckTimeoutMs: 300000   // Trigger unstuck after 5m of absolute zero movement
   },
   usernameRotation: {
-    enabled: true,
-    usernames: [
-      "BOT999", "V01DX2", "COR3X1", "Z3P888", "N30000", "K111A2",
-      "D1G001", "M1N3X7", "P1X999", "R0B0X4", "XR0B00", "ZB0T01"
-    ],
-    rotationSchedule: "time", // "time", "session", "manual"
-    sessionDurationMs: 7200000, // 2 hours
-    maxUsernameFailures: 3,     // Failures allowed per username before skipping
-    delayBetweenRotationMs: 10000 // Wait 10s before connecting next username
+    enabled: false,
+    usernames: ["BOT999"],
+    rotationSchedule: "manual",
+    sessionDurationMs: 7200000,
+    maxUsernameFailures: 3,
+    delayBetweenRotationMs: 10000
   },
   healthMonitor: {
     enabled: true,
