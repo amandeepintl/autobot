@@ -38,7 +38,7 @@ export default class AfkWorker extends BaseWorker {
     const scheduleNextAfk = () => {
       const delay = Math.floor(Math.random() * (max - min + 1)) + min;
       this.afkActionTimeout = setTimeout(async () => {
-        if (this.active && this.bot && !this.bot.isSleeping) {
+        if (this.active && this.bot && !this.bot.isSleeping && !sleepManager.isCountingDown) {
           await this.executeAfkAction();
         }
         if (this.active) {
