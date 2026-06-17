@@ -1,0 +1,46 @@
+name: Server Metrics Auto-Committer
+
+on:
+  schedule:
+    # Runs every 2 hours (12 commits a day)
+    - cron: '0 */2 * * *'
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  record-metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # We use the default GITHUB_TOKEN provided by Actions
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci --only=production
+          
+      - name: Fetch Server Metrics
+        run: |
+          mkdir -p data
+          node scripts/record-metrics.js
+          
+      - name: Commit and Push (Genuine Contribution)
+        run: |
+          # -------------------------------------------------------------
+          # IMPORTANT: To get green squares on your GitHub profile, 
+          # the email here MUST match your exact GitHub account email!
+          # -------------------------------------------------------------
+          git config --global user.name "Amandeep"
+          git config --global user.email "aman@example.com"
+          
+          git add data/SERVER_METRICS.md
+          
+          # Only commit if there are changes
+          git diff --quiet && git diff --staged --quiet || git commit -m "chore(metrics): update server health and activity log"
+          
+          git push
