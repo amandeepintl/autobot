@@ -32,6 +32,23 @@ class Supervisor {
   async start() {
     log("Initializing Minecraft Worker Platform (MWP) Supervisor...");
 
+    // Load last rotation index if exists
+    try {
+      const rotationFile = path.resolve("data/rotation.json");
+      if (fs.existsSync(rotationFile)) {
+        const fileContent = fs.readFileSync(rotationFile, 'utf8');
+        if (fileContent.trim()) {
+          const data = JSON.parse(fileContent);
+          if (data && typeof data.currentIndex === 'number') {
+            this.afkUsernameIndex = data.currentIndex;
+            log(`Loaded saved username rotation index from rotation.json: ${this.afkUsernameIndex}`);
+          }
+        }
+      }
+    } catch (err) {
+      log(`Failed to load username rotation index: ${err.message}`);
+    }
+
     // 2. Setup Event Bus Listeners
     this.setupEventBus();
 
@@ -65,6 +82,7 @@ class Supervisor {
       if (type === 'afk') {
         if (config.usernameRotation?.enabled) {
           this.afkUsernameIndex++;
+          this.saveRotationIndex();
         }
         const delay = config.usernameRotation?.delayBetweenRotationMs || 10000;
         log(`Auto-restarting primary AFK worker in ${delay / 1000} seconds...`);
@@ -86,6 +104,28 @@ class Supervisor {
     }
     log(`Spawning primary AFK worker using username: ${username} (rotation index: ${this.afkUsernameIndex})`);
     workerPool.spawnWorker('afk', { BOT_USERNAME: username });
+  }
+
+  saveRotationIndex() {
+    try {
+      const rotationFile = path.resolve("data/rotation.json");
+      const dir = path.dirname(rotationFile);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      
+      let state = { currentIndex: this.afkUsernameIndex };
+      if (fs.existsSync(rotationFile)) {
+        try {
+          const fileContent = fs.readFileSync(rotationFile, 'utf8');
+          if (fileContent.trim()) {
+            const existing = JSON.parse(fileContent);
+            state = { ...existing, ...state };
+          }
+        } catch (_) {}
+      }
+      fs.writeFileSync(rotationFile, JSON.stringify(state, null, 2), 'utf8');
+    } catch (err) {
+      log(`Failed to save username rotation index: ${err.message}`);
+    }
   }
 
   spawnInitialWorkers() {
