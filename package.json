@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/supervisor.js",
     "bot": "node src/index.js",
-    "test": "node --check src/**/*.js"
+    "test": "node scripts/check-syntax.js"
   },
   "dependencies": {
     "minecraft-data": "^3.69.0",
