@@ -1,6 +1,5 @@
 
-import { workerPool } from './worker/workerPool.js';
-import { eventBus } from './core/eventBus.js';
+import { fork } from 'child_process';
 import { config } from './config.js';
 import path from 'path';
 import fs from 'fs';
@@ -23,14 +22,14 @@ function log(message) {
 
 class Supervisor {
   constructor() {
-    this.lastHeartbeats = new Map(); // workerName -> timestamp
-    this.workerMetrics = new Map();  // workerName -> telemetry report
+    this.lastHeartbeat = 0;
     this.isShuttingDown = false;
     this.afkUsernameIndex = 0;
+    this.child = null; // Single child process reference
   }
 
   async start() {
-    log("Initializing Minecraft Worker Platform (MWP) Supervisor...");
+    log("Initializing Autobot Supervisor...");
 
     // Load last rotation index if exists
     try {
@@ -49,61 +48,79 @@ class Supervisor {
       log(`Failed to load username rotation index: ${err.message}`);
     }
 
-    // 2. Setup Event Bus Listeners
-    this.setupEventBus();
+    // Spawn the single bot process
+    this.spawnBotProcess();
 
-    // 3. Spawn initial permanent workers
-    this.spawnInitialWorkers();
-
-    // 4. Setup signal handlers and HTTP telemetry server
+    // Setup signal handlers and HTTP health server
     this.setupProcessSignals();
     this.startHttpServer();
   }
 
-  setupEventBus() {
-    // Listen to heartbeats from active workers
-    eventBus.on('worker_heartbeat', ({ type, timestamp }) => {
-      this.lastHeartbeats.set(type, timestamp);
-    });
-
-    // Listen to worker telemetry updates
-    eventBus.on('worker_telemetry', ({ type, data }) => {
-      this.workerMetrics.set(type, data);
-    });
-
-
-    // Handle unexpected exits
-    eventBus.on('worker_exited', ({ type, code, signal }) => {
-      if (this.isShuttingDown) return;
-
-      log(`Worker '${type}' exited. Code: ${code}, Signal: ${signal}`);
-      
-      // Auto-restart permanent workers (like 'afk')
-      if (type === 'afk') {
-        if (config.usernameRotation?.enabled) {
-          this.afkUsernameIndex++;
-          this.saveRotationIndex();
-        }
-        const delay = config.usernameRotation?.delayBetweenRotationMs || 10000;
-        log(`Auto-restarting primary AFK worker in ${delay / 1000} seconds...`);
-        setTimeout(() => {
-          if (!this.isShuttingDown) {
-            this.spawnAfkWorker();
-          }
-        }, delay);
-      }
-    });
-  }
-
-  spawnAfkWorker() {
+  getUsername() {
     const list = config.usernameRotation?.usernames || ["MWPBot"];
-    let username = list[0];
     if (config.usernameRotation?.enabled) {
       const index = this.afkUsernameIndex % list.length;
-      username = list[index];
+      return list[index];
     }
-    log(`Spawning primary AFK worker using username: ${username} (rotation index: ${this.afkUsernameIndex})`);
-    workerPool.spawnWorker('afk', { BOT_USERNAME: username });
+    return list[0];
+  }
+
+  spawnBotProcess() {
+    if (this.child) {
+      log("Killing existing child process before respawn...");
+      try { this.child.kill('SIGTERM'); } catch (_) {}
+      this.child = null;
+    }
+
+    const username = this.getUsername();
+    log(`Spawning bot process with username: ${username} (rotation index: ${this.afkUsernameIndex})`);
+
+    const botEntryPoint = path.resolve("src/index.js");
+
+    const env = {
+      ...process.env,
+      BOT_USERNAME: username
+    };
+
+    const child = fork(botEntryPoint, [], {
+      env,
+      execArgv: ['--max-old-space-size=256'],
+      stdio: ['inherit', 'inherit', 'inherit', 'ipc']
+    });
+
+    this.child = child;
+
+    child.on('message', (message) => {
+      if (!message || !message.type) return;
+      if (message.type === 'heartbeat') {
+        this.lastHeartbeat = Date.now();
+      }
+    });
+
+    child.on('exit', (code, signal) => {
+      log(`Bot process exited. Code: ${code}, Signal: ${signal}`);
+      this.child = null;
+
+      if (this.isShuttingDown) return;
+
+      // Rotate username on exit
+      if (config.usernameRotation?.enabled) {
+        this.afkUsernameIndex++;
+        this.saveRotationIndex();
+      }
+
+      const delay = config.usernameRotation?.delayBetweenRotationMs || 10000;
+      log(`Auto-restarting bot process in ${delay / 1000} seconds...`);
+      setTimeout(() => {
+        if (!this.isShuttingDown) {
+          this.spawnBotProcess();
+        }
+      }, delay);
+    });
+
+    child.on('error', (err) => {
+      log(`Bot process error: ${err.message}`);
+    });
   }
 
   saveRotationIndex() {
@@ -131,21 +148,24 @@ class Supervisor {
     }
   }
 
-  spawnInitialWorkers() {
-    log("Starting primary worker: 'afk'...");
-    this.spawnAfkWorker();
-  }
-
   setupProcessSignals() {
     const handleShutdown = (signal) => {
       if (this.isShuttingDown) return;
       this.isShuttingDown = true;
-      log(`Received ${signal}. Gracefully stopping all workers and shutting down database...`);
+      log(`Received ${signal}. Gracefully stopping bot process...`);
 
-      workerPool.shutdownAll();
+      if (this.child) {
+        try { this.child.kill('SIGTERM'); } catch (_) {}
+      }
 
-      log("Graceful shutdown complete. Exiting supervisor.");
-      process.exit(0);
+      // Give child 3 seconds to exit, then force kill
+      setTimeout(() => {
+        if (this.child) {
+          try { this.child.kill('SIGKILL'); } catch (_) {}
+        }
+        log("Graceful shutdown complete. Exiting supervisor.");
+        process.exit(0);
+      }, 3000);
     };
 
     process.on('SIGINT', () => handleShutdown('SIGINT'));
@@ -187,24 +207,15 @@ class Supervisor {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         
         const now = Date.now();
-        const activeWorkers = workerPool.listActiveWorkers();
-        const workerStatuses = {};
-
-        for (const worker of activeWorkers) {
-          const lastHb = this.lastHeartbeats.get(worker) || 0;
-          const metrics = this.workerMetrics.get(worker) || {};
-          workerStatuses[worker] = {
-            status: (now - lastHb < 120000) ? "healthy" : "lagging",
-            lastHeartbeatSecondsAgo: Math.round((now - lastHb) / 1000),
-            metrics
-          };
-        }
+        const childHealthy = this.child !== null && (now - this.lastHeartbeat < 120000 || this.lastHeartbeat === 0);
 
         res.end(JSON.stringify({
-          status: "healthy",
+          status: childHealthy ? "healthy" : "degraded",
           uptimeSeconds: Math.round(process.uptime()),
-          activeWorkers,
-          workers: workerStatuses
+          botRunning: this.child !== null,
+          lastHeartbeatSecondsAgo: this.lastHeartbeat > 0 ? Math.round((now - this.lastHeartbeat) / 1000) : null,
+          currentUsername: this.getUsername(),
+          rotationIndex: this.afkUsernameIndex
         }));
       });
 

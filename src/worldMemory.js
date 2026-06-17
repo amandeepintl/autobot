@@ -77,6 +77,15 @@ class WorldMemory {
     }
   }
 
+  /**
+   * Clears the stored bed position (e.g. when a bed is destroyed).
+   */
+  clearBed() {
+    this.memory.bed = null;
+    this.save();
+    logger.info("MEMORY", "Bed position cleared from memory.");
+  }
+
   setSpawn(coord) {
     if (this.isValidCoordinate(coord)) {
       this.memory.spawn = { x: coord.x, y: coord.y, z: coord.z };

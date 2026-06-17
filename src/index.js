@@ -84,6 +84,11 @@ class BotIndex {
   initConnection() {
     logger.info("SYSTEM", "Running Phase 4: Connection Setup...");
     
+    // If supervisor passed a specific username via env, force it
+    if (process.env.BOT_USERNAME) {
+      usernameRotation.setCurrentUsername(process.env.BOT_USERNAME);
+    }
+    
     const username = usernameRotation.getCurrentUsername();
     statusReporter.setBotContext(username, this.safeMode);
     

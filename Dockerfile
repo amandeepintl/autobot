@@ -13,8 +13,8 @@ WORKDIR /usr/src/app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies and compile sqlite3 from source
-RUN npm ci --only=production --build-from-source=sqlite3
+# Install dependencies
+RUN npm ci --only=production
 
 # Copy source code
 COPY . .

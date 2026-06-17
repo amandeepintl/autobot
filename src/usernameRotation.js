@@ -25,11 +25,22 @@ class UsernameRotation {
   }
 
   getCurrentUsername() {
+    // If a forced username was set (e.g. from supervisor env), use it
+    if (this._forcedUsername) return this._forcedUsername;
     const pool = config.usernameRotation.usernames;
     if (!pool || pool.length === 0) {
       throw new Error("No usernames configured in config.js");
     }
     return pool[this.state.currentIndex % pool.length];
+  }
+
+  /**
+   * Forces a specific username to be used (set by supervisor via env variable).
+   * @param {string} username
+   */
+  setCurrentUsername(username) {
+    this._forcedUsername = username;
+    logger.info("ROTATION", `Username forced to: ${username}`);
   }
 
   /**
