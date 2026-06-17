@@ -30,6 +30,7 @@ export default class AfkWorker extends BaseWorker {
   }
 
   handleChat(username, message) {
+    if (username === this.bot.username) return;
     if (!this.config.farmer || !this.config.farmer.enabled) return;
 
     const msg = message.trim().toLowerCase();
