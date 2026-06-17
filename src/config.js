@@ -30,8 +30,8 @@ export const config = {
   },
   antiAfk: {
     enabled: true,
-    minIntervalMs: 15000,  // 15 seconds
-    maxIntervalMs: 15000,  // 15 seconds
+    minIntervalMs: 5000,  // 5 seconds
+    maxIntervalMs: 10000, // 10 seconds
     actions: {
       rotateHead: true,
       crouchToggle: true,
@@ -105,14 +105,5 @@ export const config = {
     startingRetryIntervalMs: 60000, // Wait 1 minute if starting
     sleepingRetryIntervalMs: 180000 // Wait 3 minutes if sleeping
   },
-  farmer: {
-    enabled: true,
-    username: "FarmerAman",
-    triggerCommands: ["@farmer", "@farm", "@harvest"],
-    whitelist: ["Aman", "Amandeepintl", "HavocIzumi"],
-    searchRadius: 32,
-    depositChestRadius: 32,
-    cooldownMs: 30000,
-    minSeedsToKeep: 32
-  }
 };
+
