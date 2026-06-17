@@ -183,9 +183,25 @@ export default class FarmerWorker extends BaseWorker {
           const seedItem = this.bot.inventory.items().find(i => i.name === seedName);
           
           if (seedItem) {
-            await this.bot.equip(seedItem, 'hand');
-            const farmlandBlock = this.bot.blockAt(new Vec3(x, y - 1, z));
+            const farmlandPos = new Vec3(x, y - 1, z);
+            let farmlandBlock = this.bot.blockAt(farmlandPos);
+
+            // Check if farmland reverted to dirt/grass and needs tilling
+            if (farmlandBlock && farmlandBlock.name !== 'farmland') {
+              logger.warn("FARMER-PLUGIN", `Farmland destroyed at ${x}, ${y - 1}, ${z} (found: ${farmlandBlock.name}). Attempting repair...`);
+              try {
+                const hoe = await this.ensureHoe();
+                await this.bot.equip(hoe, 'hand');
+                await this.bot.activateBlock(farmlandBlock);
+                await new Promise(resolve => setTimeout(resolve, 300));
+                farmlandBlock = this.bot.blockAt(farmlandPos);
+              } catch (hoeErr) {
+                logger.error("FARMER-PLUGIN", `Failed to repair/till farmland: ${hoeErr.message}`);
+              }
+            }
+
             if (farmlandBlock && farmlandBlock.name === 'farmland') {
+              await this.bot.equip(seedItem, 'hand');
               await this.bot.placeBlock(farmlandBlock, new Vec3(0, 1, 0));
               logger.info("FARMER-PLUGIN", `Replanted ${seedName} at ${x}, ${y}, ${z}`);
             }
@@ -420,6 +436,93 @@ export default class FarmerWorker extends BaseWorker {
     } catch (err) {
       logger.error("FARMER-PLUGIN", `Failed to return home: ${err.message}`);
     }
+  }
+
+  async ensureHoe() {
+    let hoe = this.bot.inventory.items().find(i => i.name.includes('hoe'));
+    if (hoe) return hoe;
+
+    logger.info("FARMER-PLUGIN", "No hoe in inventory. Starting hoe crafting sequence...");
+
+    // 1. Check current logs, planks, and sticks count
+    const logItems = this.bot.inventory.items().filter(i => i.name.includes('log'));
+    const totalLogs = logItems.reduce((acc, i) => acc + i.count, 0);
+
+    const plankItems = this.bot.inventory.items().filter(i => i.name.includes('planks'));
+    const totalPlanks = plankItems.reduce((acc, i) => acc + i.count, 0);
+
+    const stickItem = this.bot.inventory.items().find(i => i.name === 'stick');
+    const totalSticks = stickItem ? stickItem.count : 0;
+
+    // A wooden hoe requires 2 planks and 2 sticks.
+    // Crafting sticks requires 2 planks.
+    const sticksNeeded = Math.max(0, 2 - totalSticks);
+    const planksForSticks = sticksNeeded > 0 ? 2 : 0;
+    const totalPlanksNeeded = 2 + planksForSticks;
+
+    if (totalPlanks < totalPlanksNeeded) {
+      const planksToCraft = totalPlanksNeeded - totalPlanks;
+      const logsNeeded = Math.ceil(planksToCraft / 4);
+      const logsToFarm = Math.max(0, logsNeeded - totalLogs);
+
+      if (logsToFarm > 0) {
+        logger.info("FARMER-PLUGIN", `Farming ${logsToFarm} wood logs for hoe crafting...`);
+        await this.farmWoodLogs(logsToFarm);
+      }
+
+      // Convert logs to planks
+      const freshLogs = this.bot.inventory.items().find(i => i.name.includes('log'));
+      if (!freshLogs) throw new Error("Failed to gather logs for hoe.");
+      const logName = freshLogs.name;
+      const plankName = logName.replace("log", "planks");
+      const plankItemId = this.mcData.itemsByName[plankName].id;
+
+      const plankRecipes = this.bot.recipesFor(plankItemId, null, 1, null);
+      if (plankRecipes.length === 0) throw new Error(`No plank recipe found for ${plankName}`);
+      
+      const craftPlankCount = Math.ceil((totalPlanksNeeded - totalPlanks) / 4);
+      await this.bot.craft(plankRecipes[0], craftPlankCount, null);
+      logger.info("FARMER-PLUGIN", "Crafted planks from logs.");
+    }
+
+    // 2. Craft sticks if needed (2 planks = 4 sticks)
+    if (totalSticks < 2) {
+      const stickItemId = this.mcData.itemsByName.stick.id;
+      const stickRecipes = this.bot.recipesFor(stickItemId, null, 1, null);
+      if (stickRecipes.length === 0) throw new Error("No stick recipe found.");
+      await this.bot.craft(stickRecipes[0], 1, null);
+      logger.info("FARMER-PLUGIN", "Crafted sticks from planks.");
+    }
+
+    // 3. Find and navigate to crafting table
+    const botPos = this.bot.entity.position;
+    const tables = await worldKnowledgeService.findBlocks('crafting_table', botPos);
+    if (tables.length === 0) {
+      throw new Error("No nearby crafting tables found in database. Cannot craft hoe.");
+    }
+    const tablePos = tables[0];
+    await navigationService.navigateTo(this.bot, tablePos.x, tablePos.y, tablePos.z, { reach: 2, mcData: this.mcData });
+
+    // 4. Open crafting table and craft wooden hoe
+    const tableBlock = this.bot.blockAt(new Vec3(tablePos.x, tablePos.y, tablePos.z));
+    const tableWindow = await this.bot.openCraftingTable(tableBlock);
+
+    const hoeItemId = this.mcData.itemsByName.wooden_hoe.id;
+    const hoeRecipes = this.bot.recipesFor(hoeItemId, null, 1, tableWindow);
+    if (hoeRecipes.length === 0) {
+      tableWindow.close();
+      throw new Error("Failed to find wooden hoe recipe inside crafting table window.");
+    }
+    
+    await this.bot.craft(hoeRecipes[0], 1, tableWindow);
+    tableWindow.close();
+    logger.info("FARMER-PLUGIN", "Wooden hoe crafted successfully!");
+
+    const craftedHoe = this.bot.inventory.items().find(i => i.name === 'wooden_hoe');
+    if (!craftedHoe) {
+      throw new Error("Wooden hoe missing from inventory after crafting.");
+    }
+    return craftedHoe;
   }
 
   async shutdown() {
