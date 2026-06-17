@@ -1,4 +1,4 @@
-import { db } from './core/database.js';
+
 import { workerPool } from './worker/workerPool.js';
 import { eventBus } from './core/eventBus.js';
 import { config } from './config.js';
@@ -31,16 +31,6 @@ class Supervisor {
 
   async start() {
     log("Initializing Minecraft Worker Platform (MWP) Supervisor...");
-
-    // 1. Initialize SQLite WAL Database
-    try {
-      await db.open();
-      await db.configure();
-      await db.initializeSchema();
-    } catch (err) {
-      log(`CRITICAL: Database initialization failed: ${err.message}`);
-      process.exit(1);
-    }
 
     // 2. Setup Event Bus Listeners
     this.setupEventBus();
@@ -111,13 +101,8 @@ class Supervisor {
 
       workerPool.shutdownAll();
 
-      db.close().then(() => {
-        log("Database connections closed cleanly. Exiting supervisor.");
-        process.exit(0);
-      }).catch((err) => {
-        log(`Error closing database: ${err.message}`);
-        process.exit(1);
-      });
+      log("Graceful shutdown complete. Exiting supervisor.");
+      process.exit(0);
     };
 
     process.on('SIGINT', () => handleShutdown('SIGINT'));
