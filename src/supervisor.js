@@ -64,16 +64,6 @@ class Supervisor {
       this.workerMetrics.set(type, data);
     });
 
-    // Handle dynamically triggered worker spawning
-    eventBus.on('worker_message', ({ type, data }) => {
-      if (data.type === 'start_worker' && data.target) {
-        log(`Trigger request received: Spawning worker '${data.target}'`);
-        workerPool.spawnWorker(data.target);
-      } else if (data.type === 'stop_worker' && data.target) {
-        log(`Trigger request received: Stopping worker '${data.target}'`);
-        workerPool.terminateWorker(data.target);
-      }
-    });
 
     // Handle unexpected exits
     eventBus.on('worker_exited', ({ type, code, signal }) => {
