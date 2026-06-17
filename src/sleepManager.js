@@ -43,52 +43,62 @@ class SleepManager {
    * Checks if it is nighttime and triggers the sleep routine aggressively.
    */
   async checkAndSleep() {
-    if (!this.bot || this.isSleepingState || this.isCountingDown) return;
+    if (!this.bot || !this.bot.time || this.bot.time.timeOfDay === undefined || this.isSleepingState || this.isCountingDown) return;
 
     const timeOfDay = this.bot.time.timeOfDay;
     // Sunset starts at 12000, sleep is allowed from 12542 to 23999, thundering allows sleep anytime.
-    const isNight = timeOfDay >= 12540 || timeOfDay < 120 || this.bot.isRaining;
+    const isThundering = this.bot.thunderState > 0;
+    const isNight = timeOfDay >= 12540 || timeOfDay < 120 || isThundering;
     
     if (!isNight) return;
 
     this.isCountingDown = true;
-    logger.info("SLEEP", `Night/Sunset detected (Time: ${timeOfDay}). Locating bed...`);
+    logger.info("SLEEP", `Night/Sunset detected (Time: ${timeOfDay}, Thunder: ${isThundering}). Locating bed...`);
 
     try {
       let bedBlock = null;
+      let bedPos = null;
 
       // 1. Check world memory first
       if (worldMemory.memory.bed) {
         const savedPos = worldMemory.memory.bed;
-        const targetVec = new Vec3(savedPos.x, savedPos.y, savedPos.z);
-        const block = this.bot.blockAt(targetVec);
-        if (block && block.name.endsWith('_bed')) {
-          bedBlock = block;
-          logger.info("SLEEP", `Targeting saved bed at: ${targetVec}`);
+        bedPos = new Vec3(savedPos.x, savedPos.y, savedPos.z);
+        
+        const block = this.bot.blockAt(bedPos);
+        if (block) {
+          if (block.name.endsWith('_bed')) {
+            bedBlock = block;
+            logger.info("SLEEP", `Targeting saved bed at: ${bedPos}`);
+          } else {
+            logger.warn("SLEEP", `Saved bed at ${bedPos} is missing or destroyed (found: ${block.name}).`);
+            worldMemory.setBed(null);
+            bedPos = null;
+          }
         } else {
-          logger.warn("SLEEP", `Saved bed at ${targetVec} is missing or destroyed.`);
-          worldMemory.setBed(null);
+          logger.info("SLEEP", `Saved bed at ${bedPos} is in an unloaded chunk. Targeting coordinates...`);
         }
       }
 
-      // 2. Search for bed nearby if memory is empty
-      if (!bedBlock) {
-        logger.info("SLEEP", "Searching for nearest bed in a 32-block radius...");
+      // 2. Search for bed nearby if memory is empty or saved bed was destroyed
+      if (!bedPos) {
+        logger.info("SLEEP", "Searching for nearest bed in a 64-block radius...");
         bedBlock = this.bot.findBlock({
           matching: (block) => block.name.endsWith('_bed'),
-          maxDistance: 32
+          maxDistance: 64
         });
+        if (bedBlock) {
+          bedPos = bedBlock.position;
+          logger.info("SLEEP", `Found a bed nearby at: ${bedPos}`);
+        }
       }
 
-      if (!bedBlock) {
-        logger.warn("SLEEP", "No beds found nearby.");
+      if (!bedPos) {
+        logger.warn("SLEEP", "No beds found nearby within 64 blocks.");
         eventBus.emit('bed_failure');
         this.isCountingDown = false;
         return;
       }
 
-      const bedPos = bedBlock.position;
-      
       // 3. Move closer to the bed using pathfinder navigation
       let distance = this.bot.entity.position.distanceTo(bedPos);
       if (distance > 2.5) {
@@ -96,7 +106,7 @@ class SleepManager {
         try {
           const minecraftData = await import('minecraft-data');
           const mcData = minecraftData.default(this.bot.version);
-          await navigationService.navigateTo(this.bot, bedPos.x, bedPos.y, bedPos.z, { reach: 2.0, mcData, timeout: 5000 });
+          await navigationService.navigateTo(this.bot, bedPos.x, bedPos.y, bedPos.z, { reach: 2.0, mcData, timeout: 8000 });
         } catch (navErr) {
           logger.warn("SLEEP", `Navigation to bed failed: ${navErr.message}. Attempting direct sleep anyway.`);
         }
@@ -106,19 +116,31 @@ class SleepManager {
       let attempts = 0;
       while (this.bot && !this.bot.isSleeping && attempts < 15) {
         const currentTime = this.bot.time.timeOfDay;
-        const stillNight = currentTime >= 12540 || currentTime < 120 || this.bot.isRaining;
+        const stillNight = currentTime >= 12540 || currentTime < 120 || (this.bot.thunderState > 0);
         if (!stillNight) break;
 
         logger.info("SLEEP", `Attempting to enter bed at ${bedPos} (Attempt ${attempts + 1}/15)...`);
+        
+        // Find block again if it was not loaded initially
+        if (!bedBlock) {
+          const block = this.bot.blockAt(bedPos);
+          if (block && block.name.endsWith('_bed')) {
+            bedBlock = block;
+          }
+        }
+
         try {
-          // Look at bed first to guarantee action is facing the block
-          await this.bot.lookAt(bedPos, true);
-          await this.bot.sleep(bedBlock);
-          worldMemory.setBed(bedPos);
-          logger.info("SLEEP", "Successfully entered bed.");
-          break;
+          if (bedBlock) {
+            await this.bot.lookAt(bedPos, true);
+            await this.bot.sleep(bedBlock);
+            worldMemory.setBed(bedPos);
+            logger.info("SLEEP", "Successfully entered bed.");
+            break;
+          } else {
+            throw new Error("Bed block data not loaded yet.");
+          }
         } catch (err) {
-          logger.debug("SLEEP", `Bed use failed: ${err.message}`);
+          logger.warn("SLEEP", `Bed use failed: ${err.message}`);
           attempts++;
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
