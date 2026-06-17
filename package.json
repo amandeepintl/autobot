@@ -13,7 +13,6 @@
     "minecraft-data": "^3.69.0",
     "mineflayer": "^4.21.0",
     "mineflayer-pathfinder": "^2.4.5",
-    "sqlite3": "^6.0.1",
     "vec3": "^0.1.8"
   }
 }
