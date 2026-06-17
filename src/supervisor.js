@@ -39,8 +39,8 @@ class Supervisor {
         const fileContent = fs.readFileSync(rotationFile, 'utf8');
         if (fileContent.trim()) {
           const data = JSON.parse(fileContent);
-          if (data && typeof data.currentIndex === 'number') {
-            this.afkUsernameIndex = data.currentIndex;
+          if (data && data.data && typeof data.data.currentIndex === 'number') {
+            this.afkUsernameIndex = data.data.currentIndex;
             log(`Loaded saved username rotation index from rotation.json: ${this.afkUsernameIndex}`);
           }
         }
@@ -112,17 +112,20 @@ class Supervisor {
       const dir = path.dirname(rotationFile);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       
-      let state = { currentIndex: this.afkUsernameIndex };
+      let fileData = { schemaVersion: 1, data: { currentIndex: this.afkUsernameIndex } };
       if (fs.existsSync(rotationFile)) {
         try {
           const fileContent = fs.readFileSync(rotationFile, 'utf8');
           if (fileContent.trim()) {
             const existing = JSON.parse(fileContent);
-            state = { ...existing, ...state };
+            if (existing && existing.data) {
+              fileData = existing;
+              fileData.data.currentIndex = this.afkUsernameIndex;
+            }
           }
         } catch (_) {}
       }
-      fs.writeFileSync(rotationFile, JSON.stringify(state, null, 2), 'utf8');
+      fs.writeFileSync(rotationFile, JSON.stringify(fileData, null, 2), 'utf8');
     } catch (err) {
       log(`Failed to save username rotation index: ${err.message}`);
     }
