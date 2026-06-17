@@ -31,9 +31,7 @@ class NavigationService {
     movements.allowSprinting = true;
     movements.allowParkour = true; // Enable parkour so the bot can climb 1-block boundaries/steps
     
-    // Add blocks to avoid to prevent walking/jumping on chests, crafting tables, and farmland if possible
-    if (mcData.blocksByName.chest) movements.blocksToAvoid.add(mcData.blocksByName.chest.id);
-    if (mcData.blocksByName.crafting_table) movements.blocksToAvoid.add(mcData.blocksByName.crafting_table.id);
+    // Keep farmland in blocksToAvoid to prevent trampling crops while AFK
     if (mcData.blocksByName.farmland) movements.blocksToAvoid.add(mcData.blocksByName.farmland.id);
     
     return movements;
