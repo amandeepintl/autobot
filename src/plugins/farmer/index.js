@@ -54,8 +54,10 @@ export default class FarmerWorker extends BaseWorker {
   }
 
   async runFarmingCycle() {
-    this.bot.chat("Farmer Bot online. Commencing scanning phase...");
+    this.bot.chat("Farmer Bot online. Waiting for chunks to load...");
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
+    this.bot.chat("Commencing scanning phase...");
     // 1. Scan the environment for resources (crops, chests, crafting tables)
     await this.scanResources();
 
@@ -80,43 +82,68 @@ export default class FarmerWorker extends BaseWorker {
     logger.info("FARMER-PLUGIN", "Scanning nearby chunks for crops, chests, and crafting tables...");
 
     const radius = this.config.farmer.searchRadius || 32;
-    const botPos = this.bot.entity.position;
 
-    // Find chests
-    const chests = this.bot.findBlocks({
-      matching: this.mcData.blocksByName.chest.id,
-      maxDistance: radius,
-      count: 10
-    });
-    for (const c of chests) {
-      await storageService.registerChest(c.x, c.y, c.z);
-    }
+    let attempts = 0;
+    const maxAttempts = 3;
 
-    // Find crafting tables
-    const tables = this.bot.findBlocks({
-      matching: this.mcData.blocksByName.crafting_table.id,
-      maxDistance: radius,
-      count: 5
-    });
-    for (const t of tables) {
-      await worldKnowledgeService.registerBlock('crafting_table', t.x, t.y, t.z);
-    }
-
-    // Find crop blocks
-    const cropBlockNames = Object.keys(this.strategies);
-    for (const cropName of cropBlockNames) {
-      const blockId = this.mcData.blocksByName[cropName]?.id;
-      if (!blockId) continue;
-
-      const crops = this.bot.findBlocks({
-        matching: blockId,
+    while (attempts < maxAttempts) {
+      // Find chests
+      const chests = this.bot.findBlocks({
+        matching: this.mcData.blocksByName.chest.id,
         maxDistance: radius,
-        count: 100
+        count: 10
       });
-      for (const cropPos of crops) {
-        await worldKnowledgeService.registerBlock(cropName, cropPos.x, cropPos.y, cropPos.z);
+
+      // Find crafting tables
+      const tables = this.bot.findBlocks({
+        matching: this.mcData.blocksByName.crafting_table.id,
+        maxDistance: radius,
+        count: 5
+      });
+
+      // Find crop blocks
+      let totalCropsFound = 0;
+      const cropBlockNames = Object.keys(this.strategies);
+      const cropsToRegister = [];
+
+      for (const cropName of cropBlockNames) {
+        const blockId = this.mcData.blocksByName[cropName]?.id;
+        if (!blockId) continue;
+
+        const crops = this.bot.findBlocks({
+          matching: blockId,
+          maxDistance: radius,
+          count: 100
+        });
+        totalCropsFound += crops.length;
+        cropsToRegister.push({ cropName, crops });
+      }
+
+      if (chests.length > 0 || tables.length > 0 || totalCropsFound > 0) {
+        // Register everything we found
+        for (const c of chests) {
+          await storageService.registerChest(c.x, c.y, c.z);
+        }
+        for (const t of tables) {
+          await worldKnowledgeService.registerBlock('crafting_table', t.x, t.y, t.z);
+        }
+        for (const { cropName, crops } of cropsToRegister) {
+          for (const cropPos of crops) {
+            await worldKnowledgeService.registerBlock(cropName, cropPos.x, cropPos.y, cropPos.z);
+          }
+        }
+        logger.info("FARMER-PLUGIN", `Scan successful! Found ${chests.length} chests, ${tables.length} crafting tables, and ${totalCropsFound} crop blocks.`);
+        return;
+      }
+
+      attempts++;
+      if (attempts < maxAttempts) {
+        logger.warn("FARMER-PLUGIN", `Scan returned nothing (attempt ${attempts}/${maxAttempts}). Waiting 3 seconds for chunks to stream...`);
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
+
+    logger.warn("FARMER-PLUGIN", "Scanning finished but found absolutely no nearby crops, chests, or crafting tables.");
   }
 
   async harvestAndReplant() {
