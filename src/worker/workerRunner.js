@@ -39,7 +39,7 @@ async function start() {
   }
 
   // 4. Determine connection credentials
-  let username = config.usernameRotation?.usernames?.[0] || "MWPBot";
+  let username = process.env.BOT_USERNAME || config.usernameRotation?.usernames?.[0] || "MWPBot";
   if (workerType === 'farmer' && config.farmer?.username) {
     username = config.farmer.username;
   }

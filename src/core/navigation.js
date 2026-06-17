@@ -1,4 +1,5 @@
-import { pathfinder, Movements, goals } from 'mineflayer-pathfinder';
+import pkgPathfinder from 'mineflayer-pathfinder';
+const { pathfinder, Movements, goals } = pkgPathfinder;
 import { Vec3 } from 'vec3';
 import { logger } from '../logger.js';
 

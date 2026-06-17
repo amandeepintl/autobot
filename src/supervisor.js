@@ -1,6 +1,7 @@
 import { db } from './core/database.js';
 import { workerPool } from './worker/workerPool.js';
 import { eventBus } from './core/eventBus.js';
+import { config } from './config.js';
 import path from 'path';
 import fs from 'fs';
 import http from 'http';
@@ -25,6 +26,7 @@ class Supervisor {
     this.lastHeartbeats = new Map(); // workerName -> timestamp
     this.workerMetrics = new Map();  // workerName -> telemetry report
     this.isShuttingDown = false;
+    this.afkUsernameIndex = 0;
   }
 
   async start() {
@@ -81,19 +83,34 @@ class Supervisor {
       
       // Auto-restart permanent workers (like 'afk')
       if (type === 'afk') {
-        log("Auto-restarting primary AFK worker in 5 seconds...");
+        if (config.usernameRotation?.enabled) {
+          this.afkUsernameIndex++;
+        }
+        const delay = config.usernameRotation?.delayBetweenRotationMs || 10000;
+        log(`Auto-restarting primary AFK worker in ${delay / 1000} seconds...`);
         setTimeout(() => {
           if (!this.isShuttingDown) {
-            workerPool.spawnWorker('afk');
+            this.spawnAfkWorker();
           }
-        }, 5000);
+        }, delay);
       }
     });
   }
 
+  spawnAfkWorker() {
+    const list = config.usernameRotation?.usernames || ["MWPBot"];
+    let username = list[0];
+    if (config.usernameRotation?.enabled) {
+      const index = this.afkUsernameIndex % list.length;
+      username = list[index];
+    }
+    log(`Spawning primary AFK worker using username: ${username} (rotation index: ${this.afkUsernameIndex})`);
+    workerPool.spawnWorker('afk', { BOT_USERNAME: username });
+  }
+
   spawnInitialWorkers() {
     log("Starting primary worker: 'afk'...");
-    workerPool.spawnWorker('afk');
+    this.spawnAfkWorker();
   }
 
   setupProcessSignals() {
