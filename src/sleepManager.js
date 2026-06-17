@@ -53,9 +53,10 @@ class SleepManager {
     // Sunset starts at 12000. Night sleep allowed from 12542.
     // Thunderstorm must be fully active (thunderState > 0.8) to sleep during the day.
     const isThundering = this.bot.thunderState > 0.8;
-    const isSunsetOrNight = (timeOfDay >= 12000 && timeOfDay < 23900) || isThundering;
+    const isNight = timeOfDay >= 12542 || timeOfDay < 120 || isThundering;
+    const isSunset = timeOfDay >= 12000 && timeOfDay < 12542;
     
-    if (!isSunsetOrNight) return;
+    if (!isNight && !isSunset) return;
 
     this.isCountingDown = true;
     logger.info("SLEEP", `Sunset/Night detected (Time: ${timeOfDay}, ThunderState: ${this.bot.thunderState}). Locating bed...`);
@@ -119,20 +120,22 @@ class SleepManager {
         }
       }
 
-      // 4. Chat countdown: 10 to 1
-      this.bot.chat("Sun is setting! I am going to sleep in 10 seconds...");
-      for (let i = 10; i > 0; i--) {
-        if (!this.bot) return;
-        this.bot.chat(i.toString());
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      // 4. Chat countdown ONLY during Sunset (when the sun is on the verge of setting)
+      if (isSunset) {
+        this.bot.chat("Sun is setting! I am going to sleep in 10 seconds...");
+        for (let i = 10; i > 0; i--) {
+          if (!this.bot) return;
+          this.bot.chat(i.toString());
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
       }
 
       // 5. Sleep Attempt Loop (Aggressive retry every 1 second until time transitions to morning or sleep succeeds)
       let attempts = 0;
       while (this.bot && !this.bot.isSleeping && attempts < 20) {
         const currentTime = this.bot.time.timeOfDay;
-        const stillNight = (currentTime >= 12000 && currentTime < 23900) || (this.bot.thunderState > 0.8);
-        if (!stillNight) break;
+        const stillNightOrSunset = (currentTime >= 12000 && currentTime < 23900) || (this.bot.thunderState > 0.8);
+        if (!stillNightOrSunset) break;
 
         logger.info("SLEEP", `Attempting to enter bed at ${bedPos} (Attempt ${attempts + 1}/20)...`);
         
