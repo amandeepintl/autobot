@@ -103,9 +103,13 @@ class Supervisor {
 
       if (this.isShuttingDown) return;
 
-      // Don't rotate username on crash/restart — rotation is handled
-      // inside connectionManager within the child process itself
-
+      // Rotate username only on clean exit (session expired normally)
+      // This prevents burning through usernames if the bot crashes or gets kicked repeatedly.
+      if (code === 0 && config.usernameRotation?.enabled) {
+        this.afkUsernameIndex++;
+        this.saveRotationIndex();
+        log(`Session completed cleanly. Rotated to next username index: ${this.afkUsernameIndex}.`);
+      }
       const delay = config.usernameRotation?.delayBetweenRotationMs || 10000;
       log(`Auto-restarting bot process in ${delay / 1000} seconds...`);
       setTimeout(() => {

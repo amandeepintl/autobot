@@ -132,17 +132,16 @@ class ConnectionManager {
     this.destroyBot();
     
     // Record uptime
-    const uptimeMs = config.usernameRotation.sessionDurationMs || 7200000;
+    const uptimeMs = config.usernameRotation.sessionDurationMs || 3600000;
     usernameRotation.recordUptime(oldUsername, uptimeMs);
 
-    // Rotate username
-    const nextUser = usernameRotation.rotate();
-    logger.info("CONNECT", `Rotating from ${oldUsername} to ${nextUser}.`);
-
-    // Wait configurable delay before connecting next username
-    const delay = config.usernameRotation.delayBetweenRotationMs || 10000;
-    logger.info("CONNECT", `Waiting ${delay / 1000}s before establishing next connection...`);
-    this.scheduleReconnect(delay);
+    logger.info("CONNECT", `Session expired for ${oldUsername}. Exiting process to allow supervisor to rotate.`);
+    
+    // Allow logs to flush and disconnect to finish, then exit.
+    // The supervisor.js will see the exit, rotate the afkUsernameIndex, and spawn a new bot.
+    setTimeout(() => {
+      process.exit(0);
+    }, 2000);
   }
 
   handleConnectionFailure(reason) {
