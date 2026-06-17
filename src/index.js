@@ -156,8 +156,8 @@ class BotIndex {
       }
     }, false);
 
-    // 7. Night sleep check: every 30 seconds
-    taskScheduler.addTask("sleepCheck", 30000, () => {
+    // 7. Night sleep check: every 2 seconds
+    taskScheduler.addTask("sleepCheck", 2000, () => {
       if (connectionManager.bot) {
         sleepManager.checkAndSleep();
       }
