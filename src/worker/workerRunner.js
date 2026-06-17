@@ -1,6 +1,7 @@
 import mineflayer from 'mineflayer';
 import { logger } from '../logger.js';
 import { config } from '../config.js';
+import { db } from '../core/database.js';
 
 async function start() {
   const workerType = process.env.WORKER_TYPE;
@@ -10,6 +11,14 @@ async function start() {
   }
 
   logger.info(`RUNNER-${workerType.toUpperCase()}`, `Starting worker process for type: ${workerType}`);
+
+  // Open SQLite database connection for this child process
+  try {
+    await db.open();
+  } catch (err) {
+    logger.error(`RUNNER-${workerType.toUpperCase()}`, `Failed to open database connection: ${err.message}`);
+    process.exit(1);
+  }
 
   // 1. Dynamically import the corresponding worker plugin
   let pluginModule;
@@ -83,7 +92,7 @@ async function start() {
 
   bot.on('kicked', (reason) => {
     logger.warn(`RUNNER-${workerType.toUpperCase()}`, `Bot kicked from server: ${reason}`);
-    process.exit(1);
+    db.close().finally(() => process.exit(1));
   });
 
   bot.on('error', (err) => {
@@ -92,7 +101,7 @@ async function start() {
 
   bot.on('end', (reason) => {
     logger.warn(`RUNNER-${workerType.toUpperCase()}`, `Bot connection ended: ${reason}`);
-    process.exit(1);
+    db.close().finally(() => process.exit(1));
   });
 
   // 7. Graceful shutdown signals
@@ -103,6 +112,9 @@ async function start() {
     } catch (err) {
       logger.error(`RUNNER-${workerType.toUpperCase()}`, `Shutdown execution failed: ${err.message}`);
     }
+    try {
+      await db.close();
+    } catch (_) {}
     process.exit(0);
   };
 
