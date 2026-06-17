@@ -12,6 +12,7 @@ class SleepManager {
     this.bot = null;
     this.isSleepingState = false;
     this.isCountingDown = false;
+    this.lastSleepFailTime = 0; // 2 minutes cooldown on failure
 
     eventBus.on('bot_disconnect', () => {
       this.bot = null;
@@ -45,15 +46,21 @@ class SleepManager {
   async checkAndSleep() {
     if (!this.bot || !this.bot.time || this.bot.time.timeOfDay === undefined || this.isSleepingState || this.isCountingDown) return;
 
+    // Check failure cooldown
+    if (Date.now() - this.lastSleepFailTime < 120000) return;
+
     const timeOfDay = this.bot.time.timeOfDay;
     // Sunset starts at 12000. Night sleep allowed from 12542.
-    const isThundering = this.bot.thunderState > 0;
+    // Thunderstorm must be fully active (thunderState > 0.8) to sleep during the day.
+    const isThundering = this.bot.thunderState > 0.8;
     const isSunsetOrNight = (timeOfDay >= 12000 && timeOfDay < 23900) || isThundering;
     
     if (!isSunsetOrNight) return;
 
     this.isCountingDown = true;
-    logger.info("SLEEP", `Sunset/Night detected (Time: ${timeOfDay}, Thunder: ${isThundering}). Locating bed...`);
+    logger.info("SLEEP", `Sunset/Night detected (Time: ${timeOfDay}, ThunderState: ${this.bot.thunderState}). Locating bed...`);
+
+    let sleepSucceeded = false;
 
     try {
       let bedBlock = null;
@@ -124,7 +131,7 @@ class SleepManager {
       let attempts = 0;
       while (this.bot && !this.bot.isSleeping && attempts < 20) {
         const currentTime = this.bot.time.timeOfDay;
-        const stillNight = (currentTime >= 12000 && currentTime < 23900) || (this.bot.thunderState > 0);
+        const stillNight = (currentTime >= 12000 && currentTime < 23900) || (this.bot.thunderState > 0.8);
         if (!stillNight) break;
 
         logger.info("SLEEP", `Attempting to enter bed at ${bedPos} (Attempt ${attempts + 1}/20)...`);
@@ -143,6 +150,7 @@ class SleepManager {
             await this.bot.sleep(bedBlock);
             worldMemory.setBed(bedPos);
             logger.info("SLEEP", "Successfully entered bed.");
+            sleepSucceeded = true;
             break;
           } else {
             throw new Error("Bed block data not loaded yet.");
@@ -158,6 +166,11 @@ class SleepManager {
       eventBus.emit('bed_failure');
     } finally {
       this.isCountingDown = false;
+      // If we went through the routine and failed to sleep, set a 2-minute cooldown
+      if (!sleepSucceeded && this.bot && !this.bot.isSleeping) {
+        this.lastSleepFailTime = Date.now();
+        logger.info("SLEEP", "Sleep routine failed or ended without sleeping. Triggering 2-minute cooldown.");
+      }
     }
   }
 
