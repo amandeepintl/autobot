@@ -30,6 +30,7 @@ class NavigationService {
     movements.canDig = false; // Prevent bot from breaking world block layouts during navigation
     movements.allowSprinting = true;
     movements.allowParkour = true; // Enable parkour so the bot can climb 1-block boundaries/steps
+    movements.canOpenDoors = true; // Allow bot to open doors to reach bed
     
     // Keep farmland in blocksToAvoid to prevent trampling crops while AFK
     if (mcData.blocksByName.farmland) movements.blocksToAvoid.add(mcData.blocksByName.farmland.id);
