@@ -40,20 +40,20 @@ class SleepManager {
   }
 
   /**
-   * Checks if it is nighttime and triggers the sleep routine aggressively.
+   * Checks if it is nighttime/sunset and triggers the sleep routine with a countdown.
    */
   async checkAndSleep() {
     if (!this.bot || !this.bot.time || this.bot.time.timeOfDay === undefined || this.isSleepingState || this.isCountingDown) return;
 
     const timeOfDay = this.bot.time.timeOfDay;
-    // Sunset starts at 12000, sleep is allowed from 12542 to 23999, thundering allows sleep anytime.
+    // Sunset starts at 12000. Night sleep allowed from 12542.
     const isThundering = this.bot.thunderState > 0;
-    const isNight = timeOfDay >= 12540 || timeOfDay < 120 || isThundering;
+    const isSunsetOrNight = (timeOfDay >= 12000 && timeOfDay < 23900) || isThundering;
     
-    if (!isNight) return;
+    if (!isSunsetOrNight) return;
 
     this.isCountingDown = true;
-    logger.info("SLEEP", `Night/Sunset detected (Time: ${timeOfDay}, Thunder: ${isThundering}). Locating bed...`);
+    logger.info("SLEEP", `Sunset/Night detected (Time: ${timeOfDay}, Thunder: ${isThundering}). Locating bed...`);
 
     try {
       let bedBlock = null;
@@ -112,14 +112,22 @@ class SleepManager {
         }
       }
 
-      // 4. Sleep Attempt Loop (Aggressive retry every 1 second until time transitions to morning or sleep succeeds)
+      // 4. Chat countdown: 10 to 1
+      this.bot.chat("Sun is setting! I am going to sleep in 10 seconds...");
+      for (let i = 10; i > 0; i--) {
+        if (!this.bot) return;
+        this.bot.chat(i.toString());
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      // 5. Sleep Attempt Loop (Aggressive retry every 1 second until time transitions to morning or sleep succeeds)
       let attempts = 0;
-      while (this.bot && !this.bot.isSleeping && attempts < 15) {
+      while (this.bot && !this.bot.isSleeping && attempts < 20) {
         const currentTime = this.bot.time.timeOfDay;
-        const stillNight = currentTime >= 12540 || currentTime < 120 || (this.bot.thunderState > 0);
+        const stillNight = (currentTime >= 12000 && currentTime < 23900) || (this.bot.thunderState > 0);
         if (!stillNight) break;
 
-        logger.info("SLEEP", `Attempting to enter bed at ${bedPos} (Attempt ${attempts + 1}/15)...`);
+        logger.info("SLEEP", `Attempting to enter bed at ${bedPos} (Attempt ${attempts + 1}/20)...`);
         
         // Find block again if it was not loaded initially
         if (!bedBlock) {
