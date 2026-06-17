@@ -93,6 +93,20 @@ class ConnectionManager {
       logger.info("CONNECT", "Logged into server successfully.");
     });
 
+    this.bot.on('death', () => {
+      logger.warn("CONNECT", "Bot died! Attempting to respawn...");
+      setTimeout(() => {
+        if (this.bot) {
+          try {
+            this.bot.respawn();
+            logger.info("CONNECT", "Respawn packet sent.");
+          } catch (e) {
+            logger.error("CONNECT", `Failed to respawn: ${e.message}`);
+          }
+        }
+      }, 3000);
+    });
+
     this.bot.on('kicked', (reason) => {
       const reasonStr = typeof reason === 'string' ? reason : JSON.stringify(reason);
       logger.warn("CONNECT", `Kicked from server. Reason: ${reasonStr}`);
